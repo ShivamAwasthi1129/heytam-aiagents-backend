@@ -1,0 +1,36 @@
+{
+  "name": "heytam-agents-backend",
+  "version": "1.0.0",
+  "main": "dist/server.js",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "build": "tsc",
+    "start": "node dist/server.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "@ai-sdk/openai": "^4.0.69",
+    "@google-cloud/local-auth": "^3.0.1",
+    "@types/nodemailer": "^8.0.2",
+    "ai": "^7.0.105",
+    "cors": "^2.8.6",
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1",
+    "googleapis": "^181.0.0",
+    "mongodb": "^7.6.0",
+    "nodemailer": "^10.0.10",
+    "twilio": "^6.1.1",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.6",
+    "@types/node": "^22.20.3",
+    "tsx": "^4.23.13",
+    "typescript": "^7.0.2"
+  }
+}
