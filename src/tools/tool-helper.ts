@@ -10,6 +10,7 @@ export type ToolDef<TParams extends z.ZodTypeAny> = {
 export function defineTool<TParams extends z.ZodTypeAny>(def: ToolDef<TParams>): any {
   return tool({
     description: def.description,
+    inputSchema: def.parameters,
     parameters: def.parameters,
     execute: def.execute,
   } as any);

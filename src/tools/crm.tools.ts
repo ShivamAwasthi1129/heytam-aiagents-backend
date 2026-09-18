@@ -83,12 +83,14 @@ export function createCrmTools(keys: TenantCrmKeys) {
         data: z.record(z.string(), z.any()).describe('Lead data object to save or update.'),
       }),
       execute: async ({ collection, filterKey, filterValue, data }) => {
-        if (!keys.mongoUri) return { success: false, error: 'MongoDB URI not provided by tenant.' };
+        const activeUri = keys.mongoUri || process.env.MONGODB_URI || process.env.DATABASE_URL;
+        const activeDb = keys.mongoDatabase || process.env.MONGODB_DB || 'heytam-ai-agents';
+        if (!activeUri) return { success: false, error: 'MongoDB URI not provided by tenant or backend environment.' };
         let client: MongoClient | null = null;
         try {
-          client = new MongoClient(keys.mongoUri);
+          client = new MongoClient(activeUri);
           await client.connect();
-          const db = client.db(keys.mongoDatabase || 'heytam');
+          const db = client.db(activeDb);
           const result = await db.collection(collection).updateOne(
             { [filterKey]: filterValue },
             { $set: { ...data, updatedAt: new Date().toISOString() }, $setOnInsert: { createdAt: new Date().toISOString() } },
@@ -108,12 +110,14 @@ export function createCrmTools(keys: TenantCrmKeys) {
         limit: z.number().default(10).describe('Max records to return.'),
       }),
       execute: async ({ collection, filter, limit }) => {
-        if (!keys.mongoUri) return { success: false, error: 'MongoDB URI not provided by tenant.' };
+        const activeUri = keys.mongoUri || process.env.MONGODB_URI || process.env.DATABASE_URL;
+        const activeDb = keys.mongoDatabase || process.env.MONGODB_DB || 'heytam-ai-agents';
+        if (!activeUri) return { success: false, error: 'MongoDB URI not provided by tenant or backend environment.' };
         let client: MongoClient | null = null;
         try {
-          client = new MongoClient(keys.mongoUri);
+          client = new MongoClient(activeUri);
           await client.connect();
-          const db = client.db(keys.mongoDatabase || 'heytam');
+          const db = client.db(activeDb);
           const docs = await db.collection(collection).find(filter).limit(limit).toArray();
           return { success: true, records: docs.map(d => ({ ...d, _id: String(d._id) })), count: docs.length };
         } catch (err: unknown) { return { success: false, error: (err as Error).message }; }
@@ -129,12 +133,14 @@ export function createCrmTools(keys: TenantCrmKeys) {
         note: z.string().describe('Interaction summary or note content.'),
       }),
       execute: async ({ leadIdentifier, agentName, note }) => {
-        if (!keys.mongoUri) return { success: false, error: 'MongoDB URI not provided by tenant.' };
+        const activeUri = keys.mongoUri || process.env.MONGODB_URI || process.env.DATABASE_URL;
+        const activeDb = keys.mongoDatabase || process.env.MONGODB_DB || 'heytam-ai-agents';
+        if (!activeUri) return { success: false, error: 'MongoDB URI not provided by tenant or backend environment.' };
         let client: MongoClient | null = null;
         try {
-          client = new MongoClient(keys.mongoUri);
+          client = new MongoClient(activeUri);
           await client.connect();
-          const db = client.db(keys.mongoDatabase || 'heytam');
+          const db = client.db(activeDb);
           await db.collection('leads').updateOne(
             { $or: [{ email: leadIdentifier }, { phone: leadIdentifier }] },
             { $push: { notes: { agentName, note, timestamp: new Date().toISOString() } } as any },

@@ -37,9 +37,10 @@ export async function runMasterOrchestrator(
   const timestamp = new Date().toISOString();
   const stringifiedInput = typeof rawInput === 'string' ? rawInput : JSON.stringify(rawInput, null, 2);
 
+  const orchestratorModelName = process.env.OPENAI_MODEL || 'gpt-4o-mini';
   const model = tenantKeys.openaiApiKey
-    ? createOpenAI({ apiKey: tenantKeys.openaiApiKey })(process.env.OPENAI_MODEL || 'gpt-4o')
-    : openai(process.env.OPENAI_MODEL || 'gpt-4o'); // Orchestrator uses smarter model
+    ? createOpenAI({ apiKey: tenantKeys.openaiApiKey })(orchestratorModelName)
+    : openai(orchestratorModelName);
 
   const tools = {
     ...createAgentTools(tenantKeys),

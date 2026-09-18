@@ -30,7 +30,17 @@ import { runWaitlistAgent } from '../agents/waitlistAgent.js';
 import { runWebConciergeAgent } from '../agents/webConciergeAgent.js';
 import { runWhatsappConciergeAgent } from '../agents/whatsappConciergeAgent.js';
 
+import { ALL_AGENT_IDS } from '../tools/index.js';
+
 const router = Router();
+
+// Endpoint to get a list of all available agents
+router.get('/', (req: Request, res: Response) => {
+  res.json({
+    status: 'success',
+    agents: ALL_AGENT_IDS
+  });
+});
 
 // Generic endpoint to run a specific agent
 router.post('/run/:agentId', async (req: Request, res: Response) => {
