@@ -49,10 +49,11 @@ export function createCommunicationTools(keys: TenantCommunicationKeys) {
         if (!keys.smtpHost || !keys.smtpUser || !keys.smtpPass)
           return { success: false, error: 'SMTP credentials not provided by tenant.' };
         try {
+          const cleanPass = keys.smtpPass.trim().replace(/\s+/g, '');
           const transporter = nodemailer.createTransport({
             host: keys.smtpHost, port: keys.smtpPort || 587,
             secure: (keys.smtpPort || 587) === 465,
-            auth: { user: keys.smtpUser, pass: keys.smtpPass },
+            auth: { user: keys.smtpUser, pass: cleanPass },
           });
           const info = await transporter.sendMail({ from: keys.smtpFrom || keys.smtpUser, to, subject, text: body, html: htmlBody });
           return { success: true, messageId: info.messageId };
@@ -76,7 +77,13 @@ export function createCommunicationTools(keys: TenantCommunicationKeys) {
             twiml: `<Response><Say voice="Polly.Joanna">${message}</Say></Response>`,
           });
           return { success: true, callSid: call.sid, status: String(call.status) };
-        } catch (err: unknown) { return { success: false, error: (err as Error).message }; }
+        } catch (err: unknown) {
+          const msg = (err as Error).message;
+          if (msg.includes('trial') || msg.includes('unverified')) {
+            return { success: false, error: `Twilio Trial Limitation: Phone number ${to} must be verified in Twilio Console (Verified Caller IDs). Details: ${msg}` };
+          }
+          return { success: false, error: msg };
+        }
       },
     }),
 

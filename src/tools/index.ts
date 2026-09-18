@@ -39,11 +39,11 @@ export const finalizeResponseTool = defineTool({
   parameters: z.object({
     chainOfThought: z.string().describe("Your internal step-by-step reasoning about the user's intent and what actions you took."),
     messageToUser: z.string().describe('The final natural language response to send back to the user or lead.'),
-    capturedData: z.record(z.string(), z.any()).describe('Any structured data captured during this session.'),
+    capturedData: z.record(z.string(), z.union([z.string(), z.number(), z.boolean(), z.null(), z.array(z.string())])).describe('Any structured data captured during this session.'),
     requiresHandoff: z.boolean().describe('True if this specific task is now complete and another specialized agent must continue.'),
     targetAgent: z.enum(ALL_AGENT_IDS).describe("The next agent to delegate to, or 'none' if done."),
-    handoffReason: z.string().optional().describe('Explain why a handoff is occurring.'),
-    actionsExecuted: z.array(z.string()).optional().describe('List of real-world actions taken.'),
+    handoffReason: z.string().describe("Explain why a handoff is occurring, or 'N/A' if none."),
+    actionsExecuted: z.array(z.string()).describe('List of real-world actions taken (or empty array if none).'),
   }),
   execute: async (args) => args, // Route handler intercepts this as the final structured output
 });

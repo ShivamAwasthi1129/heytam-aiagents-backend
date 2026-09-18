@@ -80,7 +80,7 @@ export function createCrmTools(keys: TenantCrmKeys) {
         collection: z.string().describe('MongoDB collection name e.g. "leads".'),
         filterKey: z.string().describe('Unique field identifier e.g. "phone" or "email".'),
         filterValue: z.string().describe('Value of the filter key for upsert matching.'),
-        data: z.record(z.string(), z.any()).describe('Lead data object to save or update.'),
+        data: z.record(z.string(), z.union([z.string(), z.number(), z.boolean(), z.null(), z.array(z.string())])).describe('Lead data object to save or update.'),
       }),
       execute: async ({ collection, filterKey, filterValue, data }) => {
         const activeUri = keys.mongoUri || process.env.MONGODB_URI || process.env.DATABASE_URL;
@@ -106,7 +106,7 @@ export function createCrmTools(keys: TenantCrmKeys) {
       description: 'Query MongoDB for lead or customer records by filter.',
       parameters: z.object({
         collection: z.string().describe('MongoDB collection name.'),
-        filter: z.record(z.string(), z.any()).describe('MongoDB filter e.g. {"email": "john@example.com"}.'),
+        filter: z.record(z.string(), z.union([z.string(), z.number(), z.boolean(), z.null(), z.array(z.string())])).describe('MongoDB filter e.g. {"email": "john@example.com"}.'),
         limit: z.number().default(10).describe('Max records to return.'),
       }),
       execute: async ({ collection, filter, limit }) => {
