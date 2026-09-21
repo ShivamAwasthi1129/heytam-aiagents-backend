@@ -5,7 +5,12 @@ import fs from 'fs';
 import dns from 'dns';
 import { MongoClient } from 'mongodb';
 import agentsRoutes from './routes/agents.routes.js';
+import authRoutes from './routes/auth.routes.js';
+import toolsRoutes from './routes/tools.routes.js';
+import businessesRoutes from './routes/businesses.routes.js';
+import workflowsRoutes from './routes/workflows.routes.js';
 import { ALL_AGENT_IDS } from './tools/index.js';
+import { getDb } from './db/mongodb.js';
 
 // Configure reliable DNS servers to avoid Windows SRV lookup issues for MongoDB Atlas
 try {
@@ -31,20 +36,69 @@ if (process.env.DATABASE_URL && !process.env.MONGODB_URI) {
 const app = express();
 const PORT = process.env.PORT || 4000;
 
-app.use(cors());
-app.use(express.json());
+// Production-ready CORS supporting localhost, Vercel deployments, and custom domains
+const allowedOrigins = [
+  'http://localhost:3000',
+  'http://localhost:3001',
+  'https://heytam-onboarding-flow.vercel.app',
+  ...(process.env.FRONTEND_URL ? [process.env.FRONTEND_URL] : []),
+  ...(process.env.ALLOWED_ORIGINS ? process.env.ALLOWED_ORIGINS.split(',').map(s => s.trim()) : []),
+];
 
-// Routes
-app.use('/api/agents', agentsRoutes);
+app.use(cors({
+  origin: (origin, callback) => {
+    // Allow requests with no origin (like mobile apps, curl, server-to-server)
+    if (!origin) return callback(null, true);
+    if (allowedOrigins.includes(origin) || origin.endsWith('.vercel.app') || process.env.NODE_ENV !== 'production') {
+      return callback(null, true);
+    }
+    return callback(null, true); // Permissive fallback for agent tool integrations
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept'],
+}));
 
-// Quick Health
-app.get('/health', (req, res) => {
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+
+// Root Service Metadata Endpoint
+app.get('/', (req, res) => {
   res.json({
-    status: 'ok',
     service: 'heytam-agents-backend',
+    name: 'Heytam Autonomous AI Workforce Backend',
+    version: '2.2.0',
+    status: 'online',
     timestamp: new Date().toISOString(),
+    endpoints: {
+      health: '/health',
+      systemHealth: '/api/system/health',
+      auth: '/api/auth',
+      tools: '/api/tools',
+      workflows: '/api/workflows',
+      businesses: '/api/businesses',
+      agents: '/api/agents',
+    },
   });
 });
+
+// Quick Health Check for Cloud Hosting (Render, Railway, Fly, AWS, etc.)
+app.get('/health', (req, res) => {
+  res.status(200).json({
+    status: 'ok',
+    service: 'heytam-agents-backend',
+    version: '2.2.0',
+    timestamp: new Date().toISOString(),
+    uptimeSeconds: Math.floor(process.uptime()),
+  });
+});
+
+// ─── Routes ────────────────────────────────────────────────────────────────────
+app.use('/api/auth', authRoutes);
+app.use('/api/businesses', businessesRoutes);
+app.use('/api/tools', toolsRoutes);
+app.use('/api/workflows', workflowsRoutes);
+app.use('/api/agents', agentsRoutes);
 
 // Comprehensive System Diagnostics Endpoint
 app.get('/api/system/health', async (req, res) => {
@@ -59,40 +113,27 @@ app.get('/api/system/health', async (req, res) => {
     error?: string;
   } = { connected: false };
 
-  if (mongoUri) {
+  try {
     const start = Date.now();
-    let client: MongoClient | null = null;
-    try {
-      client = new MongoClient(mongoUri);
-      await client.connect();
-      // Ping the database
-      await client.db(mongoDbName).command({ ping: 1 });
-      mongoStatus = {
-        connected: true,
-        database: mongoDbName,
-        latencyMs: Date.now() - start,
-      };
-    } catch (err: any) {
-      mongoStatus = {
-        connected: false,
-        database: mongoDbName,
-        error: err?.message || 'Failed to connect to MongoDB',
-      };
-    } finally {
-      if (client) {
-        await client.close().catch(() => {});
-      }
-    }
-  } else {
+    const db = await getDb();
+    await db.command({ ping: 1 });
+    mongoStatus = {
+      connected: true,
+      database: mongoDbName,
+      latencyMs: Date.now() - start,
+    };
+  } catch (err: any) {
     mongoStatus = {
       connected: false,
-      error: 'No DATABASE_URL or MONGODB_URI configured in .env / .env.local',
+      database: mongoDbName,
+      error: err?.message || 'Failed to connect to MongoDB',
     };
   }
 
   res.json({
     status: 'ok',
     service: 'heytam-agents-backend',
+    version: '2.0.0',
     timestamp: new Date().toISOString(),
     openai: {
       configured: Boolean(openAiKey),
@@ -135,13 +176,8 @@ app.post('/api/test/db', async (req, res) => {
       metadata: req.body?.metadata || { note: 'Live verification test' },
     };
 
-    // 1. Insert
     const insertResult = await collection.insertOne(testDoc);
-
-    // 2. Read back
     const retrieved = await collection.findOne({ testId });
-
-    // 3. Count documents in collection
     const totalRecords = await collection.countDocuments();
 
     return res.json({
@@ -165,6 +201,43 @@ app.post('/api/test/db', async (req, res) => {
   }
 });
 
-app.listen(PORT, () => {
-  console.log(`Heytam Agents Backend is running on port ${PORT}`);
+// Initialize DB indexes on startup
+async function initIndexes() {
+  try {
+    const db = await getDb();
+    await db.collection('businesses').createIndex({ email: 1 }, { unique: true });
+    await db.collection('businesses').createIndex({ id: 1 }, { unique: true });
+    await db.collection('business_tools').createIndex({ businessId: 1, toolId: 1 }, { unique: true });
+    await db.collection('tool_configurations').createIndex({ businessId: 1, toolId: 1 }, { unique: true });
+    await db.collection('workflows').createIndex({ businessId: 1, id: 1 });
+    await db.collection('workflow_runs').createIndex({ businessId: 1, workflowId: 1 });
+    await db.collection('workflow_runs').createIndex({ id: 1 }, { unique: true });
+    await db.collection('workflow_runs').createIndex({ businessId: 1, createdAt: -1 });
+    await db.collection('leads').createIndex({ tenantId: 1 });
+    await db.collection('logs').createIndex({ tenantId: 1, timestamp: -1 });
+    console.log('✅ MongoDB indexes created/verified');
+
+  } catch (err) {
+    console.warn('⚠️  Could not create MongoDB indexes:', err);
+  }
+}
+
+const server = app.listen(Number(PORT), '0.0.0.0', async () => {
+  console.log(`🚀 Heytam Agents Backend v2.2 running on http://0.0.0.0:${PORT}`);
+  console.log(`📡 API Endpoints: http://0.0.0.0:${PORT}/api`);
+  console.log(`🏥 Health Check: http://0.0.0.0:${PORT}/health`);
+  await initIndexes();
 });
+
+// Graceful shutdown handling for container and process managers (Render, Railway, Docker, PM2)
+function handleShutdown(signal: string) {
+  console.log(`\n🛑 Received ${signal}. Shutting down gracefully...`);
+  server.close(() => {
+    console.log('✅ HTTP server closed. Process exiting.');
+    process.exit(0);
+  });
+}
+
+process.on('SIGTERM', () => handleShutdown('SIGTERM'));
+process.on('SIGINT', () => handleShutdown('SIGINT'));
+

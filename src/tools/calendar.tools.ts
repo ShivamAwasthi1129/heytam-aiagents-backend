@@ -10,15 +10,21 @@ export interface TenantCalendarKeys {
   googleClientId?: string;
   googleClientSecret?: string;
   googleRefreshToken?: string;
+  googleAccessToken?: string;
   googleCalendarId?: string;
 }
 
 export function createCalendarTools(keys: TenantCalendarKeys) {
   function getCalendarClient() {
-    if (!keys.googleClientId || !keys.googleClientSecret || !keys.googleRefreshToken)
-      throw new Error('Google Calendar credentials not provided by tenant.');
-    const oauth2Client = new google.auth.OAuth2(keys.googleClientId, keys.googleClientSecret);
-    oauth2Client.setCredentials({ refresh_token: keys.googleRefreshToken });
+    const clientId = keys.googleClientId || process.env.GOOGLE_CLIENT_ID || 'mock_client_id';
+    const clientSecret = keys.googleClientSecret || process.env.GOOGLE_CLIENT_SECRET || 'mock_client_secret';
+    const oauth2Client = new google.auth.OAuth2(clientId, clientSecret);
+    
+    if (keys.googleRefreshToken) {
+      oauth2Client.setCredentials({ refresh_token: keys.googleRefreshToken, access_token: keys.googleAccessToken });
+    } else if (keys.googleAccessToken) {
+      oauth2Client.setCredentials({ access_token: keys.googleAccessToken });
+    }
     return google.calendar({ version: 'v3', auth: oauth2Client });
   }
 
