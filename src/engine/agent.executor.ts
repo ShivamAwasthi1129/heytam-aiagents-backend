@@ -343,14 +343,65 @@ export async function executeAgent(params: {
     await appendOrchestratorLog(runId, `[Orchestrator] ⚠ ${agentName} running in SIMULATION MODE — configure credentials to enable real actions`);
   }
 
-  // Optional handoff
+  // ─── Deterministic Inter-Agent Routing ───────────────────────────────────────
+  // Each agent has defined routing rules — no Math.random(), every handoff has a reason.
   let handoffTo: string | undefined;
-  const canHandoff = (behavior as any).canHandoffTo;
-  if (canHandoff && canHandoff.length > 0 && Math.random() > 0.65) {
-    handoffTo = canHandoff[Math.floor(Math.random() * canHandoff.length)];
-    const hTs = new Date().toISOString().split('T')[1].split('.')[0];
-    await appendRunLog(runId, stepOrder, `[${hTs}] Preparing handoff to ${handoffTo}...`);
-    await appendOrchestratorLog(runId, `[Orchestrator] ${agentName} is handing off context → ${handoffTo}`);
+
+  const ROUTING_RULES: Record<string, (result: typeof actionResult, triggerData?: Record<string, any>) => string | undefined> = {
+    'lead-concierge': (result, td) => {
+      // Lead concierge always routes to qualifier if contact was made
+      return result.success ? 'lead-qualifier' : undefined;
+    },
+    'lead-qualifier': (result, td) => {
+      // Qualifier routes to booking if hot lead, else follow-up
+      if (!result.success) return undefined;
+      const hasEmail = td?.recipientEmail;
+      const hasPhone = td?.recipientPhone;
+      return hasEmail || hasPhone ? 'booking-agent' : 'follow-up-agent';
+    },
+    'booking-agent': (result, td) => {
+      // After booking → always activate no-show prevention
+      return result.success ? 'no-show-prevention-agent' : 'follow-up-agent';
+    },
+    'follow-up-agent': (result, td) => {
+      // After follow-up → if successful, route to review agent for feedback loop
+      return result.success ? 'review-agent' : undefined;
+    },
+    'outbound-calling-agent': (result, td) => {
+      // After call → if no answer, route to SMS concierge as fallback
+      return !result.success ? 'sms-concierge' : 'booking-agent';
+    },
+    'voice-agent': (result, td) => {
+      // Inbound call → route to booking agent
+      return result.success ? 'booking-agent' : undefined;
+    },
+    'no-show-prevention-agent': (result, td) => {
+      // If reminder failed → route to waitlist/cancellation recovery
+      return !result.success ? 'waitlist-agent' : undefined;
+    },
+    'campaign-agent': (result, td) => {
+      // After campaign → route to follow-up for nurturing
+      return result.success ? 'follow-up-agent' : undefined;
+    },
+    'reactivation-agent': (result, td) => {
+      // After reactivation → route to booking agent to close
+      return result.success ? 'booking-agent' : undefined;
+    },
+    'revenue-recovery-agent': (result, td) => {
+      // After payment recovery → route to membership agent
+      return result.success ? 'membership-agent' : undefined;
+    },
+  };
+
+  const routingFn = ROUTING_RULES[agentId];
+  if (routingFn) {
+    const suggestedHandoff = routingFn(actionResult, triggerData);
+    if (suggestedHandoff) {
+      handoffTo = suggestedHandoff;
+      const hTs = new Date().toISOString().split('T')[1].split('.')[0];
+      await appendRunLog(runId, stepOrder, `[${hTs}] 🔀 Routing decision: ${agentName} → ${handoffTo} (based on action result: ${actionResult.success ? 'SUCCESS' : 'NEEDS FALLBACK'})`);
+      await appendOrchestratorLog(runId, `[Orchestrator] 🔀 ${agentName} → Routing to ${handoffTo} [Deterministic Rule]`);
+    }
   }
 
   const durationMs = Date.now() - startTime;

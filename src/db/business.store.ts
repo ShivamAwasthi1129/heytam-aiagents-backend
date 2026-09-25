@@ -86,6 +86,10 @@ export async function verifyPassword(plain: string, hash: string): Promise<boole
   return bcrypt.compare(plain, hash);
 }
 
+export async function hashPassword(plain: string): Promise<string> {
+  return bcrypt.hash(plain, 12);
+}
+
 export async function getBusinessStats(businessId: string): Promise<{
   activeTools: number;
   needsSetup: number;

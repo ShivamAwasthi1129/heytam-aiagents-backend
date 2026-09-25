@@ -4,6 +4,7 @@
 import { Router, Request, Response } from 'express';
 import { createBusiness, findBusinessByEmail, verifyPassword, findBusinessById } from '../db/business.store.js';
 import { signToken, requireAuth, type AuthenticatedRequest } from '../middleware/auth.middleware.js';
+import { seedBusinessTraining } from '../db/training.store.js';
 
 const router = Router();
 
@@ -18,6 +19,13 @@ router.post('/register', async (req: Request, res: Response) => {
   try {
     const business = await createBusiness({ name: businessName, ownerName, email, password, phone: phone || '', location: location || '', tone, services });
     const token = signToken(business.id, business.email);
+
+    // Auto-seed comprehensive training data for new business
+    try {
+      await seedBusinessTraining(business.id, business.name, business.ownerName);
+    } catch (seedErr) {
+      console.warn('[Register] Training auto-seed non-fatal warning:', seedErr);
+    }
 
     return res.status(201).json({
       success: true,

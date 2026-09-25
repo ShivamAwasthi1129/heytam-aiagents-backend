@@ -29,7 +29,28 @@ export function requireAuth(req: AuthenticatedRequest, res: Response, next: Next
   }
 }
 
+export function optionalAuth(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+  const header = req.headers.authorization;
+  if (!header || !header.startsWith('Bearer ')) {
+    req.businessId = (req.body?.businessId as string) || (req.query?.businessId as string) || 'system';
+    return next();
+  }
+
+  const token = header.slice(7);
+  const secret = process.env.JWT_SECRET || 'heytam-secret-key-2024';
+
+  try {
+    const decoded = jwt.verify(token, secret) as { businessId: string; email: string };
+    req.businessId = decoded.businessId;
+    req.businessEmail = decoded.email;
+  } catch {
+    req.businessId = (req.body?.businessId as string) || (req.query?.businessId as string) || 'system';
+  }
+  next();
+}
+
 export function signToken(businessId: string, email: string): string {
   const secret = process.env.JWT_SECRET || 'heytam-secret-key-2024';
   return jwt.sign({ businessId, email }, secret, { expiresIn: '30d' });
 }
+

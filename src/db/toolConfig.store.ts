@@ -145,15 +145,18 @@ export async function saveOAuthConnection(
   }
 ): Promise<OAuthConnection> {
   const db = await getDb();
+
+  // Only store REAL tokens — never generate fake ones
   const conn: OAuthConnection = {
     businessId,
     provider,
     connected: true,
-    accountEmail: data.accountEmail || 'connected@account.io',
-    accountId: data.accountId || `acc_${provider}_${Date.now()}`,
-    accessToken: data.accessToken || `tok_${Math.random().toString(36).slice(2, 10)}`,
-    refreshToken: data.refreshToken || `ref_${Math.random().toString(36).slice(2, 10)}`,
-    expiresAt: data.expiresAt || new Date(Date.now() + 30 * 24 * 3600 * 1000).toISOString(),
+    accountEmail: data.accountEmail,
+    accountId: data.accountId,
+    // Only set accessToken/refreshToken if they were actually provided by the OAuth provider
+    ...(data.accessToken ? { accessToken: data.accessToken } : {}),
+    ...(data.refreshToken ? { refreshToken: data.refreshToken } : {}),
+    ...(data.expiresAt ? { expiresAt: data.expiresAt } : {}),
     scopes: data.scopes || [],
     connectedAt: new Date().toISOString(),
   };
@@ -181,12 +184,13 @@ export async function saveOAuthConnection(
     const updatedConfig = {
       ...(existing?.config || {}),
       provider,
-      oauthConnected: true,
+      oauthConnected: !!(conn.accessToken || (data.extraConfig as any)?.clientId),
       oauthProvider: provider,
       oauthEmail: conn.accountEmail,
-      googleAccessToken: conn.accessToken,
-      googleRefreshToken: conn.refreshToken,
-      googleCalendarId: conn.accountEmail || 'primary',
+      // Only copy real tokens, not placeholders
+      ...(conn.accessToken ? { googleAccessToken: conn.accessToken } : {}),
+      ...(conn.refreshToken ? { googleRefreshToken: conn.refreshToken } : {}),
+      ...(conn.accountEmail ? { googleCalendarId: conn.accountEmail } : {}),
       ...(data.extraConfig || {}),
     };
     await saveToolConfig(businessId, tid, updatedConfig);
