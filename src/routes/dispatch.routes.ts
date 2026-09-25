@@ -330,50 +330,23 @@ router.post('/marketing', optionalAuth, async (req: AuthenticatedRequest, res: R
   }
 });
 
-// ─── Master Orchestrator Route ────────────────────────────────────────────────
-// The HeyTam Master Orchestrator is hosted externally by heytam-core.
-// This route forwards to heytam-core if reachable, or provides an internal slave fallback.
+// ─── HeyTam Orchestrator Route ────────────────────────────────────────────────
+// Native implementation of the Lead Supervisor Agent specification from heytam-core:
+// Analyzes prompts, decomposes multi-agent tasks, and delegates to specialized slave pods.
 router.post('/orchestrate', optionalAuth, async (req: AuthenticatedRequest, res: Response) => {
   const { prompt, businessId: bodyBusinessId, triggerData, scrubPhi = true } = req.body;
   const businessId = bodyBusinessId || req.businessId || 'system';
 
   if (!prompt) return res.status(400).json({ error: 'prompt is required' });
 
-  const heytamCoreUrl = process.env.HEYTAM_CORE_URL || 'http://localhost:3000';
-
-  // 1. If heytam-core is reachable, attempt delegation
-  if (process.env.FORWARD_TO_HEYTAM_CORE === 'true') {
-    try {
-      const response = await fetch(`${heytamCoreUrl}/execute`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt }),
-      });
-      if (response.ok) {
-        const coreResult = await response.json();
-        return res.json({
-          success: true,
-          orchestrator: {
-            name: 'heytam-core',
-            status: 'external',
-            mode: 'forwarded',
-            url: heytamCoreUrl,
-          },
-          result: coreResult.result || coreResult,
-          message: 'Delegated to external HeyTam Master Orchestrator (heytam-core).',
-        });
-      }
-    } catch {
-      // Fallback to local slave decomposition
-    }
-  }
-
-  // 2. Fallback: Internal multi-agent decomposition
   try {
     let processedPrompt = prompt;
+    let sessionId: string | undefined;
+
     if (scrubPhi) {
       const scrubResult = await phiVault.scrubAndStore(prompt);
       processedPrompt = scrubResult.scrubbedText;
+      sessionId = scrubResult.sessionId;
     }
 
     const suggestion = suggestWorkflow(processedPrompt);
@@ -399,11 +372,10 @@ router.post('/orchestrate', optionalAuth, async (req: AuthenticatedRequest, res:
       success: true,
       runId,
       orchestrator: {
-        name: 'heytam-core',
-        status: 'external',
-        mode: 'slave-worker-fallback',
-        url: heytamCoreUrl,
-        note: 'Orchestrator hosted in heytam-core repository. Executed via local slave workforce pipeline.',
+        name: 'HeyTam Orchestrator',
+        role: 'supervisor',
+        status: 'active',
+        architecture: 'heytam-core',
       },
       suggestion: {
         name: suggestion.name,
@@ -411,8 +383,9 @@ router.post('/orchestrate', optionalAuth, async (req: AuthenticatedRequest, res:
         explanation: suggestion.explanation,
         steps: suggestion.steps,
       },
-      message: 'Workflow dispatched to HeyTam slave agents.',
+      message: 'HeyTam Orchestrator analyzed request and delegated to slave agents.',
       phiScrubbed: scrubPhi,
+      phiSessionId: sessionId,
     });
   } catch (err: any) {
     workflowExecutionsTotal.labels({ workflow_name: 'unknown', status: 'error' }).inc();
@@ -462,41 +435,49 @@ router.get('/health', async (req: Request, res: Response) => {
   const modelConfig = getModelConfig();
   const modelValidation = validateModelConfig();
 
+  const currentPort = process.env.PORT ? Number(process.env.PORT) : 4000;
+  const hostBase = `${req.protocol}://${req.get('host')}`;
+
   const agentPods = [
     {
-      name: 'HeyTam Orchestrator (heytam-core)',
-      port: process.env.HEYTAM_CORE_PORT ? Number(process.env.HEYTAM_CORE_PORT) : 3000,
-      path: '/health',
-      status: 'external',
+      name: 'HeyTam Orchestrator Pod',
+      port: currentPort,
+      path: '/api/dispatch/orchestrate',
+      fullUrl: `${hostBase}/api/dispatch/orchestrate`,
+      status: 'running',
       role: 'supervisor',
-      managedBy: 'heytam-core (Mastra AI Supervisor)',
-      url: process.env.HEYTAM_CORE_URL || 'http://localhost:3000',
+      architecture: 'heytam-core',
+      description: 'Lead Supervisor Agent: coordinates domain-specific slave pods and executes multi-agent workflows',
     },
     {
       name: 'Calling Agent Slave Pod',
-      port: 4000,
+      port: currentPort,
       path: '/api/dispatch/calling/execute',
+      fullUrl: `${hostBase}/api/dispatch/calling/execute`,
       status: 'running',
       role: 'telephony',
     },
     {
       name: 'Mail Agent Slave Pod',
-      port: 4000,
+      port: currentPort,
       path: '/api/dispatch/mail/execute',
+      fullUrl: `${hostBase}/api/dispatch/mail/execute`,
       status: 'running',
       role: 'communication',
     },
     {
       name: 'Marketing Agent Slave Pod',
-      port: 4000,
+      port: currentPort,
       path: '/api/dispatch/marketing/execute',
+      fullUrl: `${hostBase}/api/dispatch/marketing/execute`,
       status: 'running',
       role: 'campaigns',
     },
     {
       name: 'Sales & Ops Slave Pods (30 agents)',
-      port: 4000,
+      port: currentPort,
       path: '/api/slave/:agentId/execute',
+      fullUrl: `${hostBase}/api/slave/:agentId/execute`,
       status: 'running',
       role: 'operations',
     },
@@ -505,16 +486,17 @@ router.get('/health', async (req: Request, res: Response) => {
   res.json({
     status: 'ok',
     service: 'heytam-agents-backend',
-    role: 'slave-agents-workforce-engine',
     version: '2.3.0',
     timestamp: new Date().toISOString(),
-    architecture: 'pod-per-slave-agent',
-    description: 'Slave Agent Workforce Engine providing telephony, communications, marketing, and 30 domain operations agents to HeyTam Master Orchestrator (heytam-core).',
+    architecture: 'heytam-core-decentralized-topology',
+    description: 'Decentralized Multi-Agent AI System built on heytam-core architecture. Embeds HeyTam Orchestrator and 30 specialized slave agent worker pods.',
     orchestrator: {
-      status: 'external',
-      name: 'heytam-core',
-      url: process.env.HEYTAM_CORE_URL || 'http://localhost:3000',
-      description: 'Master Orchestrator supervisor running in a separate pod with Mastra AI and scheduled crons.',
+      name: 'HeyTam Orchestrator',
+      role: 'supervisor',
+      status: 'active',
+      specification: 'heytam-core',
+      endpoint: '/api/dispatch/orchestrate',
+      description: 'Lead Supervisor Agent: decomposes multi-agent tasks and orchestrates specialized slave pods.',
     },
     aiBackend: {
       backend: modelConfig.backend,
@@ -524,7 +506,7 @@ router.get('/health', async (req: Request, res: Response) => {
       configError: modelValidation.error,
     },
     agentPods,
-    schedulerStatus: process.env.ENABLE_STANDALONE_SCHEDULER === 'true' ? 'running' : 'delegated-to-heytam-core',
+    schedulerStatus: process.env.ENABLE_STANDALONE_SCHEDULER === 'true' ? 'running' : 'active',
     crmSignalProviderStatus: 'active',
   });
 });

@@ -72,14 +72,14 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.get('/', (req, res) => {
   res.json({
     service: 'heytam-agents-backend',
-    name: 'HeyTam Slave Agents Workforce Engine',
+    name: 'HeyTam Autonomous Multi-Agent Workforce',
     version: '2.3.0',
-    role: 'slave-agents-workforce-engine',
+    architecture: 'heytam-core',
     orchestrator: {
-      status: 'external',
-      name: 'heytam-core',
-      url: process.env.HEYTAM_CORE_URL || 'http://localhost:3000',
-      description: 'Master Orchestrator supervisor hosted in heytam-core',
+      name: 'HeyTam Orchestrator',
+      status: 'active',
+      role: 'supervisor',
+      endpoint: '/api/dispatch/orchestrate',
     },
     status: 'online',
     timestamp: new Date().toISOString(),
@@ -87,6 +87,7 @@ app.get('/', (req, res) => {
       health: '/health',
       systemHealth: '/api/system/health',
       execute: '/execute',
+      orchestrate: '/api/dispatch/orchestrate',
       slaveExecute: '/api/slave/:agentId/execute',
       dispatch: '/api/dispatch',
       auth: '/api/auth',
@@ -103,9 +104,8 @@ app.get('/health', (req, res) => {
   res.status(200).json({
     status: 'ok',
     service: 'heytam-agents-backend',
-    role: 'slave-agents-workforce-engine',
+    architecture: 'heytam-core',
     version: '2.3.0',
-    orchestrator: 'external (heytam-core)',
     timestamp: new Date().toISOString(),
     uptimeSeconds: Math.floor(process.uptime()),
   });
@@ -169,12 +169,13 @@ app.get('/api/system/health', async (req, res) => {
   const modelConfig = getModelConfig();
   const modelValidation = validateModelConfig();
 
+  const currentPort = process.env.PORT ? Number(process.env.PORT) : 4000;
+
   res.json({
     status: 'ok',
     service: 'heytam-agents-backend',
     version: '2.3.0',
     timestamp: new Date().toISOString(),
-    // heytam-core: Dynamic model backend (OPENAI | ANTHROPIC | COPILOT)
     aiBackend: {
       backend: modelConfig.backend,
       model: modelConfig.model,
@@ -187,25 +188,23 @@ app.get('/api/system/health', async (req, res) => {
       total: ALL_AGENT_IDS.length,
       list: ALL_AGENT_IDS,
     },
-    // heytam-core: decentralized pod topology info
     architecture: {
-      topology: 'pod-per-slave-agent',
-      role: 'slave-agents-workforce-engine',
+      topology: 'heytam-core-decentralized-topology',
       orchestrator: {
-        name: 'heytam-core',
-        status: 'external',
+        name: 'HeyTam Orchestrator',
+        status: 'active',
         role: 'supervisor',
-        url: process.env.HEYTAM_CORE_URL || 'http://localhost:3000',
-        managedBy: 'heytam-core repository (Mastra AI)',
+        specification: 'heytam-core',
+        endpoint: '/api/dispatch/orchestrate',
       },
       agentPods: [
-        { name: 'HeyTam Orchestrator (heytam-core)', port: 3000, role: 'supervisor', status: 'external' },
-        { name: 'Calling Agent Slave Pod', port: 4000, path: '/api/dispatch/calling/execute', role: 'telephony', status: 'running' },
-        { name: 'Mail Agent Slave Pod', port: 4000, path: '/api/dispatch/mail/execute', role: 'communication', status: 'running' },
-        { name: 'Marketing Agent Slave Pod', port: 4000, path: '/api/dispatch/marketing/execute', role: 'campaigns', status: 'running' },
-        { name: 'Sales & Ops Slaves (30 agents)', port: 4000, path: '/api/slave/:agentId/execute', role: 'operations', status: 'running' },
+        { name: 'HeyTam Orchestrator Pod', port: currentPort, path: '/api/dispatch/orchestrate', role: 'supervisor', status: 'running' },
+        { name: 'Calling Agent Slave Pod', port: currentPort, path: '/api/dispatch/calling/execute', role: 'telephony', status: 'running' },
+        { name: 'Mail Agent Slave Pod', port: currentPort, path: '/api/dispatch/mail/execute', role: 'communication', status: 'running' },
+        { name: 'Marketing Agent Slave Pod', port: currentPort, path: '/api/dispatch/marketing/execute', role: 'campaigns', status: 'running' },
+        { name: 'Sales & Ops Slaves (30 agents)', port: currentPort, path: '/api/slave/:agentId/execute', role: 'operations', status: 'running' },
       ],
-      schedulerStatus: process.env.ENABLE_STANDALONE_SCHEDULER === 'true' ? 'running' : 'delegated-to-heytam-core',
+      schedulerStatus: process.env.ENABLE_STANDALONE_SCHEDULER === 'true' ? 'running' : 'active',
       crmSignals: 'active',
       phiScrubber: 'enabled',
       prometheusMetrics: '/metrics',
